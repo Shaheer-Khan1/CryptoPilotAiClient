@@ -10,7 +10,7 @@ export default defineConfig({
     },
   },
   server: {
-    host: "0.0.0.0",
+    host: "0.0.0.0",`n    allowedHosts: "all",
     port: process.env.PORT ? parseInt(process.env.PORT) : 5173,
     proxy: {
       "/api": {
