@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 0 0% 98%; /* Light gray background */
+  --foreground: 0 0% 0%; /* Pure black text */
+  --muted: 0 0% 96%; /* Light gray muted */
+  --muted-foreground: 0 0% 45%; /* Dark gray text */
+  --popover: 0 0% 100%; /* White popover */
+  --popover-foreground: 0 0% 0%; /* Black text */
+  --card: 0 0% 100%; /* White cards */
+  --card-foreground: 0 0% 0%; /* Black text */
+  --border: 0 0% 90%; /* Light gray borders */
+  --input: 0 0% 95%; /* Light gray inputs */
+  --primary: 25 100% 50%; /* Bright orange #FF8000 */
+  --primary-foreground: 0 0% 100%; /* White text on orange */
+  --secondary: 0 0% 0%; /* Pure black */
+  --secondary-foreground: 0 0% 100%; /* White text on black */
+  --accent: 25 100% 50%; /* Orange accent */
+  --accent-foreground: 0 0% 100%; /* White text */
+  --destructive: 0 84.2% 60.2%; /* Red for errors */
+  --destructive-foreground: 0 0% 100%; /* White text */
+  --ring: 25 100% 50%; /* Orange focus ring */
+  --radius: 0.5rem;
+  
+  /* CryptoPilot AI brand colors */
+  --brand-orange: 25 100% 50%; /* #FF8000 */
+  --brand-black: 0 0% 0%; /* #000000 */
+  --brand-gray: 0 0% 98%; /* #FAFAFA */
+}
+
+.dark {
+  --background: 0 0% 7%; /* Very dark background */
+  --foreground: 0 0% 100%; /* White text */
+  --muted: 0 0% 15%; /* Dark gray muted */
+  --muted-foreground: 0 0% 65%; /* Light gray text */
+  --popover: 0 0% 10%; /* Dark popover */
+  --popover-foreground: 0 0% 100%; /* White text */
+  --card: 0 0% 10%; /* Dark cards */
+  --card-foreground: 0 0% 100%; /* White text */
+  --border: 0 0% 20%; /* Dark borders */
+  --input: 0 0% 15%; /* Dark inputs */
+  --primary: 25 100% 50%; /* Keep bright orange */
+  --primary-foreground: 0 0% 0%; /* Black text on orange */
+  --secondary: 0 0% 100%; /* White in dark mode */
+  --secondary-foreground: 0 0% 0%; /* Black text on white */
+  --accent: 25 100% 50%; /* Orange accent */
+  --accent-foreground: 0 0% 0%; /* Black text */
+  --destructive: 0 62.8% 30.6%; /* Dark red */
+  --destructive-foreground: 0 0% 100%; /* White text */
+  --ring: 25 100% 50%; /* Orange focus ring */
+  --radius: 0.5rem;
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+@layer utilities {
+  .bg-crypto-pattern {
+    background: linear-gradient(135deg, rgba(255, 128, 0, 0.1) 0%, rgba(0, 0, 0, 0.05) 100%);
+  }
+  
+  .text-gradient {
+    @apply bg-gradient-to-r from-primary to-orange-600 bg-clip-text text-transparent;
+  }
+  
+  .brand-text {
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: -0.02em;
+    font-family: 'Inter', sans-serif;
+  }
+  
+  .brand-orange {
+    color: hsl(var(--brand-orange));
+  }
+  
+  .brand-black {
+    color: hsl(var(--brand-black));
+  }
+  
+  .brand-gradient {
+    background: linear-gradient(135deg, hsl(var(--brand-orange)) 0%, hsl(15 100% 45%) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
