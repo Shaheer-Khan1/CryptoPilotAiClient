@@ -10,6 +10,8 @@ import { useToast } from "@/hooks/use-toast";
 
 // Base URL for the video generation API
 const VIDEO_API_BASE_URL = import.meta.env.VITE_VIDEO_API_BASE_URL || 'https://video-t4y8.onrender.com';
+// Polling interval (2 minutes)
+const POLL_INTERVAL_MS = 120000;
 
 interface NewsItem {
   title: string;
@@ -237,8 +239,8 @@ Make it:
       });
 
       // Start checking for webhook completion (fallback polling)
-      const interval = window.setInterval(() => checkVideoStatus(taskData.task_id), 3000);
-      console.log(`[POLL] Started polling every 3s for task ${taskData.task_id}. intervalId=${interval}`);
+      const interval = window.setInterval(() => checkVideoStatus(taskData.task_id), POLL_INTERVAL_MS);
+      console.log(`[POLL] Started polling every ${POLL_INTERVAL_MS / 1000}s (2 minutes) for task ${taskData.task_id}. intervalId=${interval}`);
       setPollingInterval(interval);
 
     } catch (error) {
