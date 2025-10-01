@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 
 // Base URL for the video generation API
-const VIDEO_API_BASE_URL = import.meta.env.VITE_VIDEO_API_BASE_URL || 'http://127.0.0.1:8000';
+const VIDEO_API_BASE_URL = import.meta.env.VITE_VIDEO_API_BASE_URL || 'https://video-t4y8.onrender.com';
 
 interface NewsItem {
   title: string;
