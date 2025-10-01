@@ -3,10 +3,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Play, RefreshCw, Loader2, Video, Download, Youtube } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { NewsCache } from "@/lib/newsCache";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
+
+// Base URL for the video generation API
+const VIDEO_API_BASE_URL = import.meta.env.VITE_VIDEO_API_BASE_URL || 'http://127.0.0.1:8000';
 
 interface NewsItem {
   title: string;
@@ -42,6 +45,7 @@ export default function ShortsGenerator() {
   const [videoTask, setVideoTask] = useState<VideoTask | null>(null);
   const [pollingInterval, setPollingInterval] = useState<number | null>(null);
   const [videoBlob, setVideoBlob] = useState<string | null>(null);
+  const pollAttemptRef = useRef<number>(0);
 
   // Fetch news data
   const fetchNews = async (forceRefresh: boolean = false) => {
@@ -205,7 +209,7 @@ Make it:
 
     try {
       // Send the generation request with callback URL for webhook
-      const response = await fetch('https://video-t4y8.onrender.com/generate-video', {
+      const response = await fetch(`${VIDEO_API_BASE_URL}/generate-video`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -234,6 +238,7 @@ Make it:
 
       // Start checking for webhook completion (fallback polling)
       const interval = window.setInterval(() => checkVideoStatus(taskData.task_id), 3000);
+      console.log(`[POLL] Started polling every 3s for task ${taskData.task_id}. intervalId=${interval}`);
       setPollingInterval(interval);
 
     } catch (error) {
@@ -246,7 +251,7 @@ Make it:
   const fetchAndDisplayVideo = async (taskId: string) => {
     try {
       console.log('Fetching video for task:', taskId);
-      const response = await fetch(`https://video-t4y8.onrender.com/download/${taskId}`, {
+      const response = await fetch(`${VIDEO_API_BASE_URL}/download/${taskId}`, {
         headers: {
           'Accept': 'video/mp4,video/*',
         }
@@ -291,11 +296,17 @@ Make it:
   // Function to check video status from the deployed API
   const checkVideoStatus = async (taskId: string) => {
     try {
-      const response = await fetch(`https://video-t4y8.onrender.com/task/${taskId}`);
+      pollAttemptRef.current += 1;
+      console.log(`[POLL] Attempt #${pollAttemptRef.current} for task ${taskId} at ${new Date().toISOString()}`);
+      console.log(`[POLL] Fetching: ${VIDEO_API_BASE_URL}/task/${taskId}`);
+      
+      const response = await fetch(`${VIDEO_API_BASE_URL}/task/${taskId}`);
+      console.log(`[POLL] Response: ${response.status} ${response.statusText}`);
+      console.log(`[POLL] Response headers:`, Object.fromEntries(response.headers.entries()));
       
       if (response.ok) {
         const videoData = await response.json();
-        console.log('Video status check:', videoData);
+        console.log('[POLL] Video status check:', videoData);
         
         setVideoTask({
           task_id: videoData.task_id,
@@ -306,11 +317,12 @@ Make it:
 
         // If video is completed, load it
         if (videoData.status === 'completed' && videoData.output_file) {
-          const videoUrl = `https://video-t4y8.onrender.com/download/${taskId}`;
+          const videoUrl = `${VIDEO_API_BASE_URL}/download/${taskId}`;
           setVideoBlob(videoUrl);
           
           // Stop polling
           if (pollingInterval) {
+            console.log(`[POLL] Task ${taskId} completed. Stopping polling. intervalId=${pollingInterval}`);
             clearInterval(pollingInterval);
             setPollingInterval(null);
           }
@@ -319,13 +331,20 @@ Make it:
         return videoData.status === 'completed';
       } else if (response.status === 404) {
         // Video not ready yet, continue polling
-        console.log('Video not ready yet, continuing to poll...');
+        console.log(`[POLL] Video not ready (404). Continue polling...`);
       } else {
-        console.error('Error checking video status:', response.status);
+        console.error('[POLL] Error checking video status:', response.status, response.statusText);
+        const errorText = await response.text().catch(() => 'Could not read error response');
+        console.error('[POLL] Error response body:', errorText);
       }
 
     } catch (error) {
-      console.error('Error checking video status:', error);
+      console.error('[POLL] Network/fetch error:', error);
+      console.error('[POLL] Error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
     }
     
     return false;
@@ -645,7 +664,7 @@ Make it:
                       </Button>
                       <Button
                         onClick={() => {
-                          const url = `https://video-t4y8.onrender.com/download/${videoTask.task_id}`;
+                          const url = `${VIDEO_API_BASE_URL}/download/${videoTask.task_id}`;
                           console.log('Opening download URL:', url);
                           window.open(url, '_blank');
                         }}

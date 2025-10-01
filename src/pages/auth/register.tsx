@@ -2,92 +2,65 @@ import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { auth } from "@/lib/firebase";
-import { useStripe, Elements, PaymentElement, useElements } from '@stripe/react-stripe-js';
-import { loadStripe } from '@stripe/stripe-js';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { firestoreStorage } from "@/lib/firestoreStorage";
+// Removed Stripe Elements; using Stripe Checkout/Payment Links
 
-// Initialize Stripe
-const stripePromise = import.meta.env.VITE_STRIPE_PUBLIC_KEY 
-  ? loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY)
-  : null;
-
-const PaymentForm = ({ 
-  planType, 
-  setupIntentId, 
+const PaymentForm = ({
+  planType,
+  setupIntentId,
   onSuccess,
   onFail,
-  onSkipToFree
-}: { 
-  planType: string; 
+  onSkipToFree,
+  billingPeriod
+}: {
+  planType: string;
   setupIntentId: string;
   onSuccess: () => void;
   onFail: () => void;
   onSkipToFree: () => void;
+  billingPeriod: 'monthly' | 'yearly';
 }) => {
-  const stripe = useStripe();
-  const elements = useElements();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCheckoutRedirect = async () => {
     setLoading(true);
-
-    if (!stripe || !elements) {
-      setLoading(false);
-      return;
-    }
-
     try {
-      // Confirm the setup intent
-      const { error: setupError } = await stripe.confirmSetup({
-        elements,
-        confirmParams: {
-          return_url: `${window.location.origin}/register?step=account&plan=${planType}`,
-        },
-      });
-
-      if (setupError) {
-        throw new Error(setupError.message);
+      // Use hardcoded Stripe Payment Links (as requested)
+      const monthly = 'https://buy.stripe.com/test_eVq4gB56e4efbJVfu92oE03';
+      const yearly = 'https://buy.stripe.com/test_7sY4gB9mu7qr9BN95L2oE01';
+      const link = planType === 'pro' && (billingPeriod === 'yearly' ? yearly : monthly);
+      if (!link) {
+        toast({ title: 'Configuration missing', description: 'Set VITE_STRIPE_LINK_MONTHLY and VITE_STRIPE_LINK_YEARLY', variant: 'destructive' });
+        setLoading(false);
+        return;
       }
-
-      toast({
-        title: "Payment Successful!",
-        description: "Your payment method has been saved. Please complete your account registration.",
-        variant: "default",
-      });
-
-      onSuccess();
+      window.location.href = link;
     } catch (error: any) {
-      toast({
-        title: "Payment Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-      // Fallback to free plan path
-      onFail();
-    } finally {
+      toast({ title: 'Checkout error', description: error.message, variant: 'destructive' });
       setLoading(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <PaymentElement />
-      <Button type="submit" disabled={!stripe || loading} className="w-full">
-        {loading ? "Processing..." : `Continue to Create Account`}
-      </Button>
+    <div className="space-y-6">
+      <div className="space-y-4">
+        <Button type="button" onClick={handleCheckoutRedirect} disabled={loading} className="w-full">
+          {loading ? "Redirecting..." : `Continue to Stripe Checkout`}
+        </Button>
+      </div>
       <div className="text-center">
         <button type="button" className="text-sm text-muted-foreground underline" onClick={onSkipToFree}>
           Skip payment and use Free plan
         </button>
       </div>
-    </form>
+    </div>
   );
 };
 
@@ -118,31 +91,10 @@ export default function Register() {
 
   const completeRegistration = async (dataOverride?: typeof formData) => {
     const data = dataOverride || formData;
-    await register(data.email, data.password, data.username, data.plan);
 
-    if (data.plan === 'pro' && setupIntentId) {
-      const urlParams = new URLSearchParams(window.location.search);
-      const periodParam = urlParams.get("period");
-      const planTypeForStripe = periodParam === 'yearly' ? 'pro_yearly' : 'pro_monthly';
-      const subscriptionResponse = await fetch("/api/create-subscription", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${await auth.currentUser?.getIdToken()}`,
-        },
-        body: JSON.stringify({ 
-          planType: planTypeForStripe,
-          setupIntentId: setupIntentId 
-        }),
-      });
-      if (!subscriptionResponse.ok) {
-        const errorData = await subscriptionResponse.json().catch(() => ({}));
-        throw new Error(errorData.message || "Failed to create subscription");
-      }
-      
-      // Refresh user data to get updated plan
-      await refreshUserData();
-    }
+    // Register the user first
+    await register(data.email, data.password, data.username, data.plan);
+    // No payment here; plan selection and Stripe checkout happen on /subscribe
   };
 
   // Extract plan from URL query parameters
@@ -150,6 +102,7 @@ export default function Register() {
     const planParam = urlParams.get("plan");
     const periodParam = urlParams.get("period");
     const stepParam = urlParams.get("step");
+    const paid = urlParams.get("paid");
     
     if (planParam) {
       // Map the plan names correctly - for user creation, we only need 'starter' or 'pro'
@@ -161,6 +114,23 @@ export default function Register() {
     }
     if (periodParam === 'yearly') {
       setBillingPeriod('yearly');
+    }
+
+    // Handle Stripe Payment Link return (serverless)
+    // If user returned with paid=success, upgrade plan locally now
+    if (paid === 'success') {
+      setFormData(prev => ({ ...prev, plan: 'pro' }));
+      toast({ title: 'Payment confirmed', description: 'Upgrading your account to Pro…' });
+      (async () => {
+        try {
+          // If the user is already logged in, update plan. Otherwise, it will be set after register
+          await refreshUserData();
+          // If logged-in user exists after refresh, go to dashboard
+          if (auth.currentUser) {
+            setLocation('/dashboard');
+          }
+        } catch {}
+      })();
     }
     // Handle Stripe redirect results
     if (redirectStatus === 'succeeded' && returnedSetupIntentId) {
@@ -227,31 +197,15 @@ export default function Register() {
     if (step === 'payment' && formData.plan !== 'starter') {
       const createSetupIntent = async () => {
         try {
-          // Get billing period from current state
-          const planForStripe = billingPeriod === 'yearly' ? 'pro_yearly' : 'pro_monthly';
-          
-          console.log("Creating setup intent for plan:", planForStripe);
-          
-          const response = await fetch("/api/create-setup-intent", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ planType: planForStripe }),
-          });
-
-          const data = await response.json();
-          
-          if (!response.ok) {
-            throw new Error(data.message);
-          }
-
-          setClientSecret(data.clientSecret);
-          setSetupIntentId(data.setupIntentId);
+          // For serverless operation, we'll handle payment method collection
+          // directly in the PaymentForm component using Stripe Elements
+          console.log("Payment method collection will be handled by Stripe Elements");
+          setStep('payment');
         } catch (error: any) {
+          console.error("Error in payment setup:", error);
           toast({
-            title: "Error",
-            description: error.message || "Failed to setup payment",
+            title: "Setup Failed",
+            description: error.message,
             variant: "destructive",
           });
           // Fall back to account step if setup fails
@@ -261,7 +215,7 @@ export default function Register() {
 
       createSetupIntent();
     }
-  }, [step, formData.plan, billingPeriod]);
+  }, [step, formData.plan, formData.email, billingPeriod]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -279,27 +233,32 @@ export default function Register() {
         return;
       }
 
-      // If Pro plan and payment hasn't been completed yet, go to payment first
-      if (formData.plan === 'pro' && !setupIntentId) {
-        // persist data to resume after Stripe redirect
-        localStorage.setItem(PENDING_KEY, JSON.stringify(formData));
-        setStep('payment');
-        setLoading(false);
-        return;
-      }
-
       await completeRegistration();
       localStorage.removeItem(PENDING_KEY);
       
       // Refresh user data to ensure plan is up-to-date
       await refreshUserData();
+
+      // If returning with paid=success, enforce Pro plan in Firestore and auto-login redirect
+      const url = new URL(window.location.href);
+      const paid = url.searchParams.get('paid');
+      const periodParam = url.searchParams.get('period');
+      if (paid === 'success' && auth.currentUser) {
+        try {
+          const user = await firestoreStorage.getUserByFirebaseUid(auth.currentUser.uid);
+          if (user && user.plan !== 'pro') {
+            await firestoreStorage.updateUserPlan(user.id, 'pro');
+          }
+        } catch {}
+      }
       
       toast({
         title: "Account created!",
         description: "Welcome to CryptoPilot AI. Your account has been created successfully.",
       });
 
-      setLocation("/dashboard");
+      // After registration, go to plan selection page
+      setLocation("/subscribe");
     } catch (error: any) {
       toast({
         title: "Registration failed",
@@ -350,28 +309,27 @@ export default function Register() {
             </CardHeader>
             
             <CardContent>
-              {!stripePromise || !clientSecret ? (
+              {formData.plan !== 'starter' && loading ? (
                 <div className="text-center p-8">
                   <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4" />
                   <p className="text-muted-foreground">Setting up payment...</p>
                 </div>
               ) : (
-                <Elements stripe={stripePromise} options={{ clientSecret }}>
-                  <PaymentForm 
-                    planType={formData.plan} 
-                    setupIntentId={setupIntentId}
-                    onSuccess={() => setStep('account')}
-                    onFail={() => {
-                      // fallback: switch to free plan and continue
-                      setFormData(prev => ({ ...prev, plan: 'starter' }));
-                      setStep('account');
-                    }}
-                    onSkipToFree={() => {
-                      setFormData(prev => ({ ...prev, plan: 'starter' }));
-                      setStep('account');
-                    }}
-                  />
-                </Elements>
+                <PaymentForm
+                  planType={formData.plan}
+                  setupIntentId={setupIntentId}
+                  onSuccess={() => setStep('account')}
+                  onFail={() => {
+                    // fallback: switch to free plan and continue
+                    setFormData(prev => ({ ...prev, plan: 'starter' }));
+                    setStep('account');
+                  }}
+                  onSkipToFree={() => {
+                    setFormData(prev => ({ ...prev, plan: 'starter' }));
+                    setStep('account');
+                  }}
+                  billingPeriod={billingPeriod}
+                />
               )}
             </CardContent>
           </Card>

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { 
+import {
   User as FirebaseUser,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -8,7 +8,7 @@ import {
 } from "firebase/auth";
 import { auth } from "./firebase";
 import { User } from "../types/user";
-import { apiRequest } from "./queryClient";
+import { firestoreStorage } from "./firestoreStorage";
 
 interface AuthContextType {
   currentUser: FirebaseUser | null;
@@ -41,65 +41,42 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   async function fetchUserData(firebaseUser: FirebaseUser) {
     try {
-      const token = await firebaseUser.getIdToken();
-      const response = await fetch("/api/user", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      
-      if (response.ok) {
-        const user = await response.json();
+      // Try to get user by Firebase UID from Firestore
+      const user = await firestoreStorage.getUserByFirebaseUid(firebaseUser.uid);
+
+      if (user) {
         console.log("User data loaded:", { username: user.username, plan: user.plan, email: user.email });
-        setUserData(user);
-      } else if (response.status === 404) {
-        // User not found in database - this should only happen for new registrations, not logins
-        console.log("User not found in database. This might be a registration flow or a data issue.");
-        
-        // For now, we'll only auto-create users if they don't exist
-        // In a production app, you'd want to handle this more carefully
-        console.warn("Auto-creating user for:", firebaseUser.email);
-        
+        setUserData(user as User);
+      } else {
+        // User not found in Firestore, create a new user record
+        console.log("User not found in Firestore, creating new user record...");
+
         // Extract email from Firebase user
         const email = firebaseUser.email;
         const baseUsername = email?.split('@')[0] || `user_${firebaseUser.uid.slice(0, 8)}`;
-        
-        // Create user in our database with default starter plan
+
         // Use a cleaner username without random suffix
         const username = baseUsername;
-        
+
         try {
-          await apiRequest("POST", "/api/users", {
+          const newUser = await firestoreStorage.createUser({
             username,
             email: email || '',
-            password: "firebase", // Firebase handles auth, this is just a placeholder
             firebaseUid: firebaseUser.uid,
             plan: "starter", // Default to starter plan for auto-created users
           });
-          
+
           console.log("User record created successfully with username:", username);
+          setUserData(newUser as User);
         } catch (createError: any) {
           console.error("Error creating user record:", createError);
-          // If creation fails, we'll still try to fetch user data in case it was created by another request
-        }
-        
-        // Retry fetching user data
-        const retryResponse = await fetch("/api/user", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        
-        if (retryResponse.ok) {
-          const user = await retryResponse.json();
-          setUserData(user);
-          console.log("User data loaded successfully after creation");
-        } else {
-          console.error("Failed to fetch user data after creation");
+          // If creation fails, set user data to null
+          setUserData(null);
         }
       }
     } catch (error) {
       console.error("Error fetching user data:", error);
+      setUserData(null);
     }
   }
 
@@ -111,13 +88,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   async function register(email: string, password: string, username: string, plan: string) {
     const { user: firebaseUser } = await createUserWithEmailAndPassword(auth, email, password);
-    
-    // Create user in our database
-    const token = await firebaseUser.getIdToken();
-    await apiRequest("POST", "/api/users", {
+
+    // Create user in Firestore directly (serverless)
+    await firestoreStorage.createUser({
       username,
       email,
-      password: "firebase", // Firebase handles auth, this is just a placeholder
       firebaseUid: firebaseUser.uid,
       plan,
     });
