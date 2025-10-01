@@ -237,8 +237,8 @@ Make it:
       });
 
       // Start checking for webhook completion (fallback polling)
-      const interval = window.setInterval(() => checkVideoStatus(taskData.task_id), 3000);
-      console.log(`[POLL] Started polling every 3s for task ${taskData.task_id}. intervalId=${interval}`);
+      const interval = window.setInterval(() => checkVideoStatus(taskData.task_id), 30000);
+      console.log(`[POLL] Started polling every 30s for task ${taskData.task_id}. intervalId=${interval}`);
       setPollingInterval(interval);
 
     } catch (error) {
